@@ -58,6 +58,7 @@ func (opts *options) AddFlags(fs *pflag.FlagSet) {
 
 	// flags for leader election and client connection
 	opts.ControllerOptions.AddFlags(fs)
+
 }
 
 // NewOptions creates a new *options with sane defaults

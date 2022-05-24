@@ -18,12 +18,14 @@ package estimator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/leaderelection"
+	"net/http"
 	"sync/atomic"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/informers"
@@ -33,6 +35,7 @@ import (
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/controller-manager/pkg/clientbuilder"
 	"k8s.io/klog/v2"
@@ -75,6 +78,8 @@ type EstimatorServer struct {
 	// default in-tree registry
 	registry  frameworkruntime.Registry
 	framework framework.Framework
+
+	httpServer *http.Server
 }
 
 func NewEstimatorServer(
@@ -112,6 +117,7 @@ func NewEstimatorServer(
 		nodeLister:        informerFactory.Core().V1().Nodes().Lister(),
 		podLister:         informerFactory.Core().V1().Pods().Lister(),
 		registry:          plugins.NewInTreeRegistry(),
+		httpServer:        &http.Server{Addr: fmt.Sprintf("%s:%d", "0.0.0.0", 10353)},
 	}
 
 	framework, err := frameworkruntime.NewFramework(es.registry, getDefaultPlugins(),
@@ -198,6 +204,9 @@ func (es *EstimatorServer) run(ctx context.Context) {
 		klog.Errorf("failed to wait for caches to sync")
 		return
 	}
+
+	es.serveHTTP()
+
 	// TODO: add communication interface to scheduler
 }
 
@@ -299,4 +308,53 @@ func (es *EstimatorServer) UnschedulableReplicas(ctx context.Context, gvk metav1
 	labelSelector map[string]string) (int32, error) {
 	// TODO: add real logic
 	return 0, nil
+}
+
+func (es *EstimatorServer) serveHTTP() {
+	handler := http.NewServeMux()
+
+	handler.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	handler.Handle("/metrics", promhttp.Handler())
+
+	handler.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			type DebugInfo struct {
+				requirements appsapi.ReplicaRequirements
+			}
+			var request DebugInfo
+			// Try to decode the request body into the struct. If there is an error,
+			// respond to the client with the error message and a 400 status code.
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			type response struct {
+				maxReplicas map[string]int32 `json:"maxReplicas"`
+			}
+
+			maxReplicas, err := es.MaxAcceptableReplicas(es.ctx, request.requirements)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			res := response{
+				maxReplicas: maxReplicas,
+			}
+			if err := json.NewEncoder(w).Encode(res); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		default:
+			http.Error(w, "Only post method is supported", http.StatusBadRequest)
+		}
+	})
+	es.httpServer.Handler = handler
+	if err := es.httpServer.ListenAndServe(); err != nil {
+		klog.Error(err)
+	}
 }

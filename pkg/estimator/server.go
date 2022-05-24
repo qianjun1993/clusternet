@@ -256,16 +256,18 @@ func (es *EstimatorServer) MaxAcceptableReplicas(ctx context.Context, requiremen
 		framework.DefaultAcceptableReplicasKey: 0,
 	}
 
+	klog.V(4).Infof("node selector: %v", requirements.NodeSelector)
 	nodes, err := es.nodeLister.List(labels.SelectorFromSet(requirements.NodeSelector))
 	if err != nil {
 		return defaultAcceptableReplicas, fmt.Errorf("failed to get nodes that match node selector, err: %v", err)
 	}
+	klog.V(4).Infof("find %v nodes", len(nodes))
 	nodeInfoList := make([]*framework.NodeInfo, len(nodes))
 	var nodesLen int32
 	getNodeInfo := func(i int) {
 		pods, err := es.getPodFunc(nodes[i].Name)
 		if err != nil {
-			klog.V(6).InfoS("failed to get pods in nodes", "nodes", nodes[i].Name)
+			klog.V(4).InfoS("failed to get pods in nodes", "nodes", nodes[i].Name)
 		} else {
 			nodeInfo := framework.NewNodeInfo(nodes[i], pods)
 			length := atomic.AddInt32(&nodesLen, 1)
@@ -273,6 +275,8 @@ func (es *EstimatorServer) MaxAcceptableReplicas(ctx context.Context, requiremen
 		}
 	}
 	es.framework.Parallelizer().Until(ctx, len(nodes), getNodeInfo)
+
+	klog.V(4).Infof("find %v nodes", len(nodes))
 
 	// Step 1: Filter Nodes.
 	feasibleNodes, err := findNodesThatFitRequirements(ctx, es.framework, &requirements, nodeInfoList)
@@ -324,8 +328,11 @@ func (es *EstimatorServer) serveHTTP() {
 		switch r.Method {
 		case http.MethodPost:
 			type DebugInfo struct {
-				requirements appsapi.ReplicaRequirements
+				Requirements appsapi.ReplicaRequirements `json:"requirements"`
 			}
+
+			klog.V(5).Infof("request: %v", r.Body)
+
 			var request DebugInfo
 			// Try to decode the request body into the struct. If there is an error,
 			// respond to the client with the error message and a 400 status code.
@@ -334,17 +341,20 @@ func (es *EstimatorServer) serveHTTP() {
 				return
 			}
 
+			klog.V(5).Infof("request: %v", request)
+
 			type response struct {
 				maxReplicas map[string]int32 `json:"maxReplicas"`
 			}
 
-			maxReplicas, err := es.MaxAcceptableReplicas(es.ctx, request.requirements)
+			maxReplicas, err := es.MaxAcceptableReplicas(es.ctx, request.Requirements)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
 			res := response{
 				maxReplicas: maxReplicas,
 			}
+			klog.V(6).InfoS("maxReplicas", "num", maxReplicas)
 			if err := json.NewEncoder(w).Encode(res); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

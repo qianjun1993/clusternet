@@ -23,6 +23,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	v1helper "k8s.io/component-helpers/scheduling/corev1"
+	"k8s.io/klog/v2"
 
 	appsapi "github.com/clusternet/clusternet/pkg/apis/apps/v1alpha1"
 	framework "github.com/clusternet/clusternet/pkg/estimator/framework/interfaces"
@@ -56,9 +57,11 @@ func (pl *TaintToleration) Filter(ctx context.Context, requirements *appsapi.Rep
 
 	taint, isUntolerated := v1helper.FindMatchingUntoleratedTaint(nodeInfo.Node().Spec.Taints, requirements.Tolerations, filterPredicate)
 	if !isUntolerated {
+		klog.V(6).InfoS("Filter success", "node", nodeInfo.Node().Name)
 		return nil
 	}
 
+	klog.V(6).InfoS("Filter Error", "node", nodeInfo.Node().Name, "taint key", taint.Key, "taint Value", taint.Value)
 	errReason := fmt.Sprintf("node(s) had untolerated taint {%s: %s}", taint.Key, taint.Value)
 	return framework.NewStatus(framework.Inestimable, errReason)
 }

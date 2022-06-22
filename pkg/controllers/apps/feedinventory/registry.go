@@ -23,6 +23,7 @@ import (
 	"github.com/clusternet/clusternet/pkg/controllers/apps/feedinventory/deployment"
 	"github.com/clusternet/clusternet/pkg/controllers/apps/feedinventory/replicaset"
 	"github.com/clusternet/clusternet/pkg/controllers/apps/feedinventory/statefulset"
+	"github.com/clusternet/clusternet/pkg/controllers/apps/feedinventory/tapp"
 )
 
 // Registry is a collection of all available workload parser.
@@ -43,6 +44,7 @@ func NewInTreeRegistry() Registry {
 	deployPlugin := deployment.NewPlugin()
 	replicasetPlugin := replicaset.NewPlugin()
 	statefulSetPlugin := statefulset.NewPlugin()
+	tappPlugin := tapp.NewPlugin()
 
 	return map[schema.GroupVersionKind]PluginFactory{
 		// Deployment
@@ -60,5 +62,8 @@ func NewInTreeRegistry() Registry {
 		{Group: "apps", Version: "v1beta1", Kind: deployPlugin.Kind()}:       statefulSetPlugin,
 		{Group: "apps", Version: "v1beta2", Kind: deployPlugin.Kind()}:       statefulSetPlugin,
 		{Group: "extensions", Version: "v1beta1", Kind: deployPlugin.Kind()}: statefulSetPlugin,
+
+		// tapp
+		{Group: "apps.tkestack.io", Version: "v1", Kind: tappPlugin.Kind()}: tappPlugin,
 	}
 }

@@ -26,4 +26,6 @@ const (
 	TaintToleration = "TaintToleration"
 
 	Predictor = "Predictor"
+
+	TAppIndex = "TAppIndex"
 )

@@ -22,6 +22,7 @@ import (
 	"github.com/clusternet/clusternet/pkg/scheduler/framework/plugins/names"
 	"github.com/clusternet/clusternet/pkg/scheduler/framework/plugins/predictor"
 	"github.com/clusternet/clusternet/pkg/scheduler/framework/plugins/tainttoleration"
+	"github.com/clusternet/clusternet/pkg/scheduler/framework/plugins/tappIndex"
 	"github.com/clusternet/clusternet/pkg/scheduler/framework/runtime"
 )
 
@@ -33,5 +34,6 @@ func NewInTreeRegistry() runtime.Registry {
 		names.StaticAssigner:  defaultassigner.New,
 		names.DynamicAssigner: defaultassigner.NewDynamicAssigner,
 		names.Predictor:       predictor.New,
+		names.TAppIndex:       tappIndex.New,
 	}
 }

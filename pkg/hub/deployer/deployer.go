@@ -326,6 +326,11 @@ func (deployer *Deployer) populateBasesAndLocalizations(sub *appsapi.Subscriptio
 		basesToBeDeleted.Insert(klog.KObj(base).String())
 	}
 
+	tappIndexAndStatuses, tappErr := utils.GenerateTAppIndexAndStatuses(sub, deployer.reservedNamespace, deployer.mfstLister)
+	if tappErr != nil {
+		return tappErr
+	}
+
 	var allErrs []error
 	for idx, namespacedName := range sub.Status.BindingClusters {
 		// Convert the namespacedName/name string into a distinct namespacedName and name
@@ -383,7 +388,7 @@ func (deployer *Deployer) populateBasesAndLocalizations(sub *appsapi.Subscriptio
 		}
 
 		// populate Localizations for dividing scheduling.
-		err = deployer.populateLocalizations(sub, base, idx)
+		err = deployer.populateLocalizations(sub, base, idx, tappIndexAndStatuses)
 		if err != nil {
 			allErrs = append(allErrs, err)
 			klog.ErrorDepth(5, fmt.Sprintf("Failed to sync Localizations: %v", err))
@@ -472,7 +477,7 @@ func (deployer *Deployer) deleteBase(ctx context.Context, namespacedKey string) 
 	return err
 }
 
-func (deployer *Deployer) populateLocalizations(sub *appsapi.Subscription, base *appsapi.Base, clusterIndex int) error {
+func (deployer *Deployer) populateLocalizations(sub *appsapi.Subscription, base *appsapi.Base, clusterIndex int, tappIndexAndStatuses *utils.TappIndexAndStatuses) error {
 	if len(base.UID) == 0 {
 		return fmt.Errorf("waiting for UID set for Base %s", klog.KObj(base))
 	}
@@ -544,6 +549,28 @@ func (deployer *Deployer) populateLocalizations(sub *appsapi.Subscription, base 
 			},
 		}
 
+		if feedOrder.APIVersion == utils.TAppAPIVersion && feedOrder.Kind == utils.TAppKind {
+			clusterName := sub.Status.BindingClusters[clusterIndex]
+			tappStatuses, ok := utils.GenerateTAppStatuses(tappIndexAndStatuses, utils.GetFeedKey(feedOrder.Feed),
+				clusterName, *feedOrder.DesiredReplicas)
+			if ok {
+				loc.Spec.Overrides = []appsapi.OverrideConfig{
+					{
+						Name:  "add tapp statused while dividing scheduling replicas",
+						Value: fmt.Sprintf(`[{"path": "/spec/statuses","value":%d,"op":"add"}]`, tappStatuses),
+						Type:  appsapi.MergePatchType,
+					},
+				}
+			} else {
+				msg := fmt.Sprintf("no valid tappStauses of clusters %s for %s in Subscription %s",
+					clusterName, utils.FormatFeed(feedOrder.Feed), klog.KObj(sub))
+				klog.ErrorDepth(5, msg)
+				allErrs = append(allErrs, errors.New(msg))
+				deployer.recorder.Event(sub, corev1.EventTypeWarning, "BadSchedulingResult", msg)
+				continue
+
+			}
+		}
 		err = deployer.syncLocalization(loc)
 		if err != nil {
 			allErrs = append(allErrs, err)

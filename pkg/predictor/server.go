@@ -214,14 +214,14 @@ func (s *Server) installDefaultHandlers(ctx context.Context) {
 			return
 		}
 
-		var require appsapi.ReplicaRequirements
-		err = json.Unmarshal(data, &require)
+		var requset schedulerapi.MaxAcceptableReplicasRequest
+		err = json.Unmarshal(data, &requset)
 		if err != nil {
 			http.Error(response, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		replicas, err := s.MaxAcceptableReplicas(ctx, require)
+		replicas, err := s.MaxAcceptableReplicas(ctx, requset)
 		if err != nil {
 			klog.Warningf("failed to predict max acceptable replicas for %q, error: %v", data, err)
 			http.Error(response, err.Error(), http.StatusInternalServerError)
@@ -244,8 +244,8 @@ func (s *Server) installDefaultHandlers(ctx context.Context) {
 	s.restfulCont.Add(ws)
 }
 
-func (s *Server) MaxAcceptableReplicas(ctx context.Context, requirements appsapi.ReplicaRequirements) (schedulerapi.PredictorResults, error) {
-	nodes, err := s.nodeLister.List(labels.SelectorFromSet(requirements.NodeSelector))
+func (s *Server) MaxAcceptableReplicas(ctx context.Context, request schedulerapi.MaxAcceptableReplicasRequest) (schedulerapi.PredictorResults, error) {
+	nodes, err := s.nodeLister.List(labels.SelectorFromSet(request.ReplicaRequirements.NodeSelector))
 	if err != nil {
 		return schedulerapi.PredictorResults{}, fmt.Errorf("failed to get nodes that match node selector, err: %v", err)
 	}
@@ -264,7 +264,7 @@ func (s *Server) MaxAcceptableReplicas(ctx context.Context, requirements appsapi
 	s.framework.Parallelizer().Until(ctx, len(nodes), getNodeInfo)
 
 	// Step 1: Filter Nodes.
-	feasibleNodes, err := findNodesThatFitRequirements(ctx, s.framework, &requirements, nodeInfoList)
+	feasibleNodes, err := findNodesThatFitRequirements(ctx, s.framework, &request.ReplicaRequirements, nodeInfoList)
 	if err != nil {
 		return schedulerapi.PredictorResults{}, err
 	}
@@ -274,19 +274,19 @@ func (s *Server) MaxAcceptableReplicas(ctx context.Context, requirements appsapi
 	}
 
 	// Step 2: cal max available replicas for each feasibleNodes.
-	nodeScoreList, err := computeReplicas(ctx, s.framework, &requirements, feasibleNodes)
+	nodeScoreList, err := computeReplicas(ctx, s.framework, &request.ReplicaRequirements, feasibleNodes)
 	if err != nil {
 		return schedulerapi.PredictorResults{}, err
 	}
 
 	// Step 3: Prioritize clusters.
-	priorityList, err := prioritizeNodes(ctx, s.framework, &requirements, feasibleNodes, nodeScoreList)
+	priorityList, err := prioritizeNodes(ctx, s.framework, &request.ReplicaRequirements, feasibleNodes, nodeScoreList)
 	if err != nil {
 		return schedulerapi.PredictorResults{}, err
 	}
 
 	// step4 aggregate the max available replicas
-	result, err := aggregateReplicas(ctx, s.framework, &requirements, priorityList)
+	result, err := aggregateReplicas(ctx, s.framework, &request.ReplicaRequirements, priorityList)
 	if err != nil {
 		return schedulerapi.PredictorResults{}, err
 	}

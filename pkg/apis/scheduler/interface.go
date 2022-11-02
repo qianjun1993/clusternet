@@ -21,12 +21,27 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/clusternet/clusternet/pkg/apis/apps/v1alpha1"
+	appsapi "github.com/clusternet/clusternet/pkg/apis/apps/v1alpha1"
 )
 
 const (
 	DefaultAcceptableReplicasKey = "default"
 )
+
+// MaxAcceptableReplicasRequest represents the request to calculate max acceptable replicas.
+type MaxAcceptableReplicasRequest struct {
+	// ReplicaRequirements represents the requirements required by each replica.
+	// +required
+	ReplicaRequirements appsapi.ReplicaRequirements `json:"replicaRequirements"`
+
+	// Feed represents the Kubernetes resource to be calculated
+	// +required
+	Feed appsapi.Feed `json:"feed"`
+
+	// RescheduleOld represents whether to consider the existing replicas in this cluster
+	// +optional
+	RescheduleOld bool `json:"rescheduleOld,omitempty"`
+}
 
 // PredictorReplicas indicates a map of label to replicas with this constraint. Here the label constraint
 // could be topology constraints, such as
@@ -51,7 +66,7 @@ type PredictorProvider interface {
 	//    "topology.kubernetes.io/zone=zone1,topology.kubernetes.io/region=region1": 3,
 	//    "topology.kubernetes.io/zone=zone2,topology.kubernetes.io/region=region1": 5,
 	// }.
-	MaxAcceptableReplicas(ctx context.Context, requirements v1alpha1.ReplicaRequirements) (PredictorResults, error)
+	MaxAcceptableReplicas(ctx context.Context, request MaxAcceptableReplicasRequest) (PredictorResults, error)
 
 	// UnschedulableReplicas returns current unschedulable replicas.
 	UnschedulableReplicas(ctx context.Context, gvk metav1.GroupVersionKind, namespacedName string,
